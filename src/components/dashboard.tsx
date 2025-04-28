@@ -22,6 +22,7 @@ import { db } from "@/lib/firebase"; // Import Firestore instance
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme-toggle"; // Import ThemeToggle
 import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
+import { AuthButton } from "@/components/auth-button";
 
 type SortOption = 'deadline' | 'priority' | 'title' | 'category'; // Added category sort
 type FilterOption = 'all' | 'completed' | 'incomplete';
@@ -365,6 +366,7 @@ export function Dashboard() {
                      />
                  </DialogContent>
              </Dialog>
+             <AuthButton />
             <ThemeToggle />
         </div>
       </header>
