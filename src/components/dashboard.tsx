@@ -1,11 +1,12 @@
 
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react"; // Added useEffect
-import { format, formatDistanceToNow } from "date-fns"; // Added formatDistanceToNow
-import { Timestamp, collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, onSnapshot, orderBy, writeBatch } from "firebase/firestore";
+import type * as React from "react";
+import { useState, useMemo, useEffect } from "react"; // Added useEffect
+import { formatDistanceToNow } from "date-fns"; // Added formatDistanceToNow
+import { Timestamp, collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, onSnapshot, orderBy, writeBatch } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, ListFilter, LayoutGrid, List, Info, Tag, Loader2, AlertCircle, CheckCircle, Calendar } from "lucide-react"; // Added Calendar
+import { Plus, ListFilter, LayoutGrid, List, Info, Tag, Loader2, AlertCircle, CheckCircle, CalendarDays } from "lucide-react"; // Changed Calendar to CalendarDays
 import { Button } from "@/components/ui/button";
 import { AddTaskForm } from "@/components/add-task-form";
 import { TaskCard } from "@/components/task-card";
@@ -38,21 +39,25 @@ const useTasks = () => {
         const unsubscribe = onSnapshot(q, (querySnapshot) => {
           const tasksData: Task[] = querySnapshot.docs.map(doc => {
             const data = doc.data() as Omit<TaskDocument, 'id'>;
+            // Basic validation/defaults
+            const deadline = data.deadline instanceof Timestamp ? data.deadline.toDate() : new Date();
+            const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : undefined;
+
             return {
               id: doc.id,
-              title: data.title,
-              description: data.description,
-              deadline: data.deadline.toDate(), // Convert Timestamp to Date
-              priority: data.priority,
-              completed: data.completed,
-              category: data.category, // Include category
-              createdAt: data.createdAt?.toDate(), // Convert Timestamp to Date if exists
+              title: data.title || 'Untitled Task',
+              description: data.description || undefined,
+              deadline: deadline,
+              priority: data.priority || 'medium',
+              completed: data.completed || false,
+              category: data.category || undefined,
+              createdAt: createdAt,
             };
           });
           resolve(tasksData);
         }, (error) => {
           console.error("Error fetching tasks:", error);
-          reject(error);
+          reject(new Error(`Failed to fetch tasks: ${error.message}`)); // Provide more context
         });
         // Returning unsubscribe for cleanup, though React Query handles this internally
         return unsubscribe;
@@ -76,6 +81,9 @@ const addTaskMutation = async (newTaskData: TaskInputData): Promise<string> => {
 
 const updateTaskMutation = async (taskData: Task): Promise<void> => {
     const { id, createdAt, ...dataToUpdate } = taskData; // Exclude createdAt from update data
+    if (!id) {
+        throw new Error("Task ID is missing for update.");
+    }
     const taskRef = doc(db, "tasks", id);
     await updateDoc(taskRef, {
       ...dataToUpdate,
@@ -85,11 +93,17 @@ const updateTaskMutation = async (taskData: Task): Promise<void> => {
 };
 
 const toggleTaskCompleteMutation = async ({ id, completed }: { id: string; completed: boolean }): Promise<void> => {
+    if (!id) {
+        throw new Error("Task ID is missing for toggle complete.");
+    }
     const taskRef = doc(db, "tasks", id);
     await updateDoc(taskRef, { completed });
 };
 
 const deleteTaskMutation = async (id: string): Promise<void> => {
+    if (!id) {
+        throw new Error("Task ID is missing for delete.");
+    }
     const taskRef = doc(db, "tasks", id);
     await deleteDoc(taskRef);
 };
@@ -125,7 +139,7 @@ export function Dashboard() {
     },
     onError: (err) => {
       console.error("Error adding task:", err);
-      toast({ title: "Error", description: "Failed to add task.", variant: "destructive" });
+      toast({ title: "Error", description: `Failed to add task: ${err instanceof Error ? err.message : 'Unknown error'}`, variant: "destructive" });
     },
   });
 
@@ -139,20 +153,38 @@ export function Dashboard() {
     },
     onError: (err) => {
       console.error("Error updating task:", err);
-      toast({ title: "Error", description: "Failed to update task.", variant: "destructive" });
+      toast({ title: "Error", description: `Failed to update task: ${err instanceof Error ? err.message : 'Unknown error'}`, variant: "destructive" });
     },
   });
 
    const { mutate: toggleComplete, isPending: isTogglingComplete } = useMutation({
     mutationFn: toggleTaskCompleteMutation,
      onSuccess: (_, variables) => {
-        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+        // Optimistic update can be added here if desired
+        queryClient.invalidateQueries({ queryKey: ['tasks'] }); // Refetch to confirm
         toast({ title: "Status Updated", description: `Task marked as ${variables.completed ? 'complete' : 'incomplete'}.` });
      },
-    onError: (err) => {
-      console.error("Error toggling task:", err);
-      toast({ title: "Error", description: "Failed to update task status.", variant: "destructive" });
-    },
+     onMutate: async ({ id, completed }) => {
+        // Optional: Optimistic update
+        await queryClient.cancelQueries({ queryKey: ['tasks'] })
+        const previousTasks = queryClient.getQueryData<Task[]>(['tasks'])
+        queryClient.setQueryData<Task[]>(['tasks'], old =>
+          old?.map(task => task.id === id ? { ...task, completed } : task) ?? []
+        )
+        return { previousTasks }
+      },
+      onError: (err, _, context) => {
+        // Optional: Rollback on error
+        if (context?.previousTasks) {
+            queryClient.setQueryData(['tasks'], context.previousTasks)
+        }
+        console.error("Error toggling task:", err);
+        toast({ title: "Error", description: `Failed to update task status: ${err instanceof Error ? err.message : 'Unknown error'}`, variant: "destructive" });
+      },
+      onSettled: () => {
+        // Optional: Always refetch after optimistic update attempt
+        queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      }
   });
 
   const { mutate: deleteTask, isPending: isDeletingTask } = useMutation({
@@ -163,7 +195,7 @@ export function Dashboard() {
     },
     onError: (err) => {
       console.error("Error deleting task:", err);
-      toast({ title: "Error", description: "Failed to delete task.", variant: "destructive" });
+      toast({ title: "Error", description: `Failed to delete task: ${err instanceof Error ? err.message : 'Unknown error'}`, variant: "destructive" });
     },
   });
 
@@ -173,7 +205,10 @@ export function Dashboard() {
   };
 
   const handleEditTaskSubmit = (data: TaskInputData) => {
-    if (!editingTask) return;
+    if (!editingTask?.id) {
+      toast({ title: "Error", description: "Cannot update task without an ID.", variant: "destructive" });
+      return;
+    };
      const taskToUpdate: Task = {
        ...editingTask, // Keep the original ID, completed status, and createdAt
        title: data.title,
@@ -209,7 +244,8 @@ export function Dashboard() {
   const incompleteTasksCount = totalTasks - completedTasks;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   const upcomingTasks = useMemo(() => tasks.filter(task => !task.completed && task.deadline >= new Date()).sort((a, b) => a.deadline.getTime() - b.deadline.getTime()).slice(0, 3), [tasks]);
-  const overdueTasksCount = useMemo(() => tasks.filter(task => !task.completed && task.deadline < new Date()).length, [tasks]);
+  const overdueTasksCount = useMemo(() => tasks.filter(task => !task.completed && new Date() > task.deadline).length, [tasks]);
+
 
   // Extract unique categories for filtering
   const uniqueCategories = useMemo(() => {
@@ -248,27 +284,56 @@ export function Dashboard() {
         return a.completed ? 1 : -1;
       }
 
+      // Handle potential invalid dates gracefully during sort
+       const deadlineA = a.deadline instanceof Date ? a.deadline.getTime() : 0;
+       const deadlineB = b.deadline instanceof Date ? b.deadline.getTime() : 0;
+
+
       switch (sortOption) {
         case 'deadline':
-          return a.deadline.getTime() - b.deadline.getTime();
+          return deadlineA - deadlineB;
         case 'priority':
           const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
           if (priorityDiff !== 0) return priorityDiff;
-          return a.deadline.getTime() - b.deadline.getTime(); // Secondary sort by deadline
+          return deadlineA - deadlineB; // Secondary sort by deadline
         case 'title':
           return a.title.localeCompare(b.title);
         case 'category': // Sort by category, then by deadline
            const catA = a.category || '';
            const catB = b.category || '';
            if (catA !== catB) return catA.localeCompare(catB);
-           return a.deadline.getTime() - b.deadline.getTime();
+           return deadlineA - deadlineB;
         default:
-          return 0;
+          // Ensure createdAt is valid before comparing
+          const createdAtA = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
+          const createdAtB = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
+          return createdAtB - createdAtA; // Default sort: newest first
       }
     });
   }, [tasks, sortOption, filterOption, categoryFilter]);
 
   const isSubmitting = isAddingTask || isUpdatingTask; // Combine loading states
+  const currentActionLoading = isTogglingComplete || isDeletingTask; // Loading for toggle/delete
+
+  if (!isMounted) {
+     // Optional: Render a basic loading shell or null during server render/initial mount
+     // This helps prevent hydration mismatches if isMounted affects layout significantly
+     return (
+        <div className="container mx-auto p-4 md:p-8">
+           <Skeleton className="h-10 w-1/3 mb-2" />
+           <Skeleton className="h-4 w-1/2 mb-8" />
+            <div className="mb-8 grid gap-4 grid-cols-2 lg:grid-cols-4">
+                {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 rounded-lg" />)}
+            </div>
+            <Skeleton className="h-10 w-1/4 mb-4" />
+            <Skeleton className="h-10 w-full mb-6" />
+             <div className="space-y-4">
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
+            </div>
+        </div>
+     );
+  }
+
 
   return (
     <div className="container mx-auto p-4 md:p-8">
@@ -283,8 +348,9 @@ export function Dashboard() {
                setIsAddDialogOpen(open);
             }}>
                  <DialogTrigger asChild>
-                     <Button disabled={isLoading} size="sm">
-                         <Plus className="mr-2 h-4 w-4" /> Add Task
+                     <Button disabled={isLoading || isSubmitting} size="sm">
+                         {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                         {editingTask ? 'Edit Task' : 'Add Task'}
                      </Button>
                  </DialogTrigger>
                  <DialogContent className="sm:max-w-lg md:max-w-xl"> {/* Adjusted width */}
@@ -312,9 +378,10 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-1/2" /> : incompleteTasksCount}</div>
-             <p className="text-xs text-muted-foreground">
-                {isLoading ? <Skeleton className="h-3 w-2/3 mt-1" /> : `${completedTasks} completed`}
-            </p>
+             {/* Fix: Changed p to div for valid nesting with Skeleton */}
+             <div className="text-xs text-muted-foreground mt-1">
+                {isLoading ? <Skeleton className="h-3 w-2/3" /> : `${completedTasks} completed`}
+             </div>
           </CardContent>
         </Card>
         <Card>
@@ -334,15 +401,16 @@ export function Dashboard() {
            </CardHeader>
            <CardContent>
              <div className="text-2xl font-bold text-destructive">{isLoading ? <Skeleton className="h-8 w-1/2" /> : overdueTasksCount}</div>
-              <p className="text-xs text-muted-foreground">
-                 {isLoading ? <Skeleton className="h-3 w-3/4 mt-1" /> : `Tasks past deadline`}
-             </p>
+              {/* Fix: Changed p to div for valid nesting with Skeleton */}
+              <div className="text-xs text-muted-foreground mt-1">
+                 {isLoading ? <Skeleton className="h-3 w-3/4" /> : `Tasks past deadline`}
+              </div>
            </CardContent>
          </Card>
          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                <CardTitle className="text-sm font-medium">Upcoming</CardTitle>
-               <Calendar className="h-4 w-4 text-muted-foreground" />
+               <CalendarDays className="h-4 w-4 text-muted-foreground" /> {/* Use CalendarDays */}
            </CardHeader>
            <CardContent>
                {isLoading ? (
@@ -384,9 +452,9 @@ export function Dashboard() {
              <div className="flex items-center gap-2 flex-wrap"> {/* Filters Group */}
                 <Tabs value={filterOption} onValueChange={(value) => setFilterOption(value as FilterOption)}>
                     <TabsList className="h-9">
-                        <TabsTrigger value="incomplete" className="text-xs px-2 h-7">Incomplete</TabsTrigger>
-                        <TabsTrigger value="completed" className="text-xs px-2 h-7">Completed</TabsTrigger>
-                        <TabsTrigger value="all" className="text-xs px-2 h-7">All</TabsTrigger>
+                        <TabsTrigger value="incomplete" className="text-xs px-2 h-7" disabled={isLoading}>Incomplete</TabsTrigger>
+                        <TabsTrigger value="completed" className="text-xs px-2 h-7" disabled={isLoading}>Completed</TabsTrigger>
+                        <TabsTrigger value="all" className="text-xs px-2 h-7" disabled={isLoading}>All</TabsTrigger>
                     </TabsList>
                 </Tabs>
                  {uniqueCategories.length > 1 && ( // Only show category filter if there are categories
@@ -433,27 +501,27 @@ export function Dashboard() {
         {isLoading && (
              <div className={cn(
                  "gap-4",
-                  viewOption === 'list' ? "space-y-4" : "grid md:grid-cols-2 lg:grid-cols-3"
+                  viewOption === 'list' ? "space-y-4" : "grid sm:grid-cols-2 lg:grid-cols-3" // Adjusted grid for sm
               )}>
-                 {[...Array(3)].map((_, i) => (
+                 {[...Array(viewOption === 'list' ? 3 : 6)].map((_, i) => ( // Show more skeletons for grid
                     <Card key={i} className={cn(viewOption === 'list' ? "flex flex-col sm:flex-row" : "flex flex-col")}>
                         <CardHeader className={cn("flex items-start space-x-4 p-4", viewOption === 'list' && "flex-shrink-0 sm:w-auto sm:max-w-[40%] border-b sm:border-b-0 sm:border-r")}>
-                           <Skeleton className="h-4 w-4 rounded-sm mt-1"/>
-                           <div className="flex-1 space-y-1">
+                           <Skeleton className="h-4 w-4 rounded-sm mt-1 flex-shrink-0"/>
+                           <div className="flex-1 space-y-1.5 min-w-0">
                              <Skeleton className="h-5 w-3/4" />
-                              {viewOption === 'grid' && <Skeleton className="h-3 w-full" />}
-                              {viewOption === 'grid' && <Skeleton className="h-3 w-5/6" />}
+                              {viewMode === 'grid' && <Skeleton className="h-3 w-full" />}
+                              {viewMode === 'grid' && <Skeleton className="h-3 w-5/6" />}
                            </div>
                         </CardHeader>
                         <CardContent className={cn("flex-1 flex flex-col p-4", viewOption === 'list' ? "justify-between" : "pt-0")}>
                              {viewOption === 'list' && <Skeleton className="h-3 w-24 mb-3" />}
-                            <CardFooter className={cn("flex flex-col sm:flex-row justify-between items-start sm:items-center p-0 gap-3 text-xs", viewOption === 'list' ? "mt-auto" : "mt-4")}>
-                               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <CardFooter className={cn("flex flex-col sm:flex-row justify-between items-start sm:items-center p-0 gap-3 text-xs", viewOption === 'list' ? "mt-auto pt-4 border-t sm:border-t-0" : "mt-4 pt-4 border-t")}>
+                               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 w-full sm:w-auto">
                                     <Skeleton className="h-5 w-16 rounded-full" />
                                     <Skeleton className="h-5 w-12 rounded-full" />
                                     <Skeleton className="h-3 w-24" />
                                 </div>
-                                <div className="flex items-center space-x-1 self-end sm:self-center mt-2 sm:mt-0">
+                                <div className="flex items-center space-x-1 self-end sm:self-center mt-2 sm:mt-0 flex-shrink-0">
                                      <Skeleton className="h-7 w-7 rounded" />
                                      <Skeleton className="h-7 w-7 rounded" />
                                 </div>
@@ -465,14 +533,14 @@ export function Dashboard() {
         )}
         {error && <Alert variant="destructive" className="my-4">
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Error</AlertTitle>
-                    <AlertDescription>Failed to load tasks: {error.message}</AlertDescription>
+                    <AlertTitle>Error Loading Tasks</AlertTitle>
+                    <AlertDescription>{error.message || "An unknown error occurred."}</AlertDescription>
                     </Alert>}
         {!isLoading && !error && (
             filteredAndSortedTasks.length > 0 ? (
              <div className={cn(
                  "gap-4 transition-all duration-300", // Added transition
-                  viewOption === 'list' ? "space-y-4" : "grid md:grid-cols-2 lg:grid-cols-3"
+                  viewOption === 'list' ? "space-y-4" : "grid sm:grid-cols-2 lg:grid-cols-3" // Adjusted grid for sm
               )}>
                   {filteredAndSortedTasks.map(task => (
                   <TaskCard
@@ -482,22 +550,23 @@ export function Dashboard() {
                       onEdit={startEditTask}
                       onDelete={handleDeleteTask}
                       viewMode={viewOption}
-                      isUpdating={isTogglingComplete || isDeletingTask} // Pass loading state for individual actions
+                      isUpdating={currentActionLoading} // Pass loading state for individual actions
                   />
                   ))}
             </div>
           ) : (
-            <div className="text-center text-muted-foreground mt-8 border border-dashed rounded-lg p-12">
+            <div className="text-center text-muted-foreground mt-8 border border-dashed rounded-lg p-12 flex flex-col items-center">
+                <Info className="h-10 w-10 text-muted-foreground mb-4" />
                <p className="font-semibold text-lg">
                    {tasks.length === 0 ? 'No tasks yet!' : 'No tasks match your current filters.'}
                </p>
                 {tasks.length === 0 ? (
-                     <p className="text-sm mt-2">Click "Add Task" in the header to get started!</p>
+                     <p className="text-sm mt-2 max-w-xs">Click the "Add Task" button in the header to create your first task and get started!</p>
                 ) : (
-                     <p className="text-sm mt-2">Try adjusting the status or category filters.</p>
+                     <p className="text-sm mt-2 max-w-xs">Try adjusting the status or category filters above, or add more tasks.</p>
                 )}
-                 <Button variant="outline" size="sm" className="mt-4 text-xs" onClick={() => { setFilterOption('incomplete'); setCategoryFilter('all'); }}>
-                    Reset Filters
+                 <Button variant="outline" size="sm" className="mt-4 text-xs" onClick={() => { setFilterOption('incomplete'); setCategoryFilter('all'); setSortOption('deadline') }}>
+                    Reset Filters & Sort
                 </Button>
             </div>
           )
@@ -506,6 +575,3 @@ export function Dashboard() {
     </div>
   );
 }
-
-
-    
