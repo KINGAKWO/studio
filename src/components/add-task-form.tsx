@@ -2,10 +2,10 @@
 "use client";
 
 import type * as React from "react";
-import { useState } from "react"; // Import useState
+import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Check, ChevronsUpDown, Loader2, Sparkles } from "lucide-react"; // Import Sparkles
+import { Calendar as CalendarIcon, Check, ChevronsUpDown, Loader2, Sparkles } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -35,24 +35,26 @@ import {
   } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { Task, TaskPriority } from "@/types/task";
-import { breakdownTask } from "@/ai/flows/breakdown-task-flow"; // Import the AI flow
-import { useToast } from "@/hooks/use-toast"; // Import useToast
+import type { Task, TaskPriority, TaskInputData } from "@/types/task"; // Import TaskInputData
+import { breakdownTask } from "@/ai/flows/breakdown-task-flow";
+import { useToast } from "@/hooks/use-toast";
 
 const priorities: TaskPriority[] = ["low", "medium", "high"];
 
 const taskFormSchema = z.object({
   title: z.string().min(1, "Title is required").max(100, "Title is too long"),
-  description: z.string().max(1000, "Description is too long").optional(), // Increased max length
+  description: z.string().max(1000, "Description is too long").optional(),
   deadline: z.date({ required_error: "Deadline is required." }),
   priority: z.enum(priorities, { required_error: "Priority is required." }),
+  // category: z.string().optional(), // Add if using categories
 });
 
+// Use TaskInputData for form values type
 type TaskFormValues = z.infer<typeof taskFormSchema>;
 
 interface AddTaskFormProps {
-  onSubmit: (data: TaskFormValues) => Promise<void> | void;
-  initialData?: Task; // For editing
+  onSubmit: (data: TaskInputData) => Promise<void> | void; // Expect TaskInputData
+  initialData?: Task; // For editing, still use Task type as it has ID
   onCancel?: () => void;
   isSubmitting?: boolean;
 }
@@ -63,8 +65,8 @@ export function AddTaskForm({
   onCancel,
   isSubmitting = false,
 }: AddTaskFormProps) {
-  const [isBreakingDown, setIsBreakingDown] = useState(false); // State for AI breakdown loading
-  const { toast } = useToast(); // Get toast function
+  const [isBreakingDown, setIsBreakingDown] = useState(false);
+  const { toast } = useToast();
 
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
@@ -72,19 +74,22 @@ export function AddTaskForm({
       ? {
           title: initialData.title,
           description: initialData.description || "",
-          deadline: initialData.deadline,
+          deadline: initialData.deadline, // Keep as Date object for the form
           priority: initialData.priority,
+          // category: initialData.category || "",
         }
       : {
           title: "",
           description: "",
           deadline: undefined,
           priority: "medium",
+          // category: "",
         },
   });
 
+  // The handleSubmit function receives TaskFormValues (which matches TaskInputData structure)
   const handleSubmit = (data: TaskFormValues) => {
-    onSubmit(data);
+    onSubmit(data); // Directly pass the validated form data
   };
 
   const handleBreakdown = async () => {
@@ -159,7 +164,7 @@ export function AddTaskForm({
                     variant="outline"
                     size="sm"
                     onClick={handleBreakdown}
-                    disabled={isBreakingDown || !form.watch('title')} // Disable if loading or no title
+                    disabled={isBreakingDown || !form.watch('title') || isSubmitting} // Disable if AI or form is submitting
                     className="text-xs"
                  >
                     {isBreakingDown ? (
@@ -173,7 +178,7 @@ export function AddTaskForm({
               <FormControl>
                 <Textarea
                   placeholder="e.g., Chapter 5, exercises 1-10. Or click 'Break Down with AI' for suggestions."
-                  className="resize-none min-h-[100px]" // Ensure enough height
+                  className="resize-none min-h-[100px]"
                   {...field}
                 />
               </FormControl>
@@ -187,7 +192,7 @@ export function AddTaskForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Priority</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting || isBreakingDown}>
                 <FormControl>
                   <SelectTrigger>
                     <SelectValue placeholder="Select task priority" />
@@ -220,6 +225,7 @@ export function AddTaskForm({
                         "w-[240px] pl-3 text-left font-normal",
                         !field.value && "text-muted-foreground"
                       )}
+                      disabled={isSubmitting || isBreakingDown}
                     >
                       {field.value ? (
                         format(field.value, "PPP")
@@ -244,6 +250,20 @@ export function AddTaskForm({
             </FormItem>
           )}
         />
+        {/* Add Category field if needed */}
+        {/* <FormField
+          control={form.control}
+          name="category"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Category (Optional)</FormLabel>
+              <FormControl>
+                <Input placeholder="e.g., Homework, Project, Exam Prep" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        /> */}
 
         <div className="flex justify-end space-x-2">
             {onCancel && <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting || isBreakingDown}>Cancel</Button>}

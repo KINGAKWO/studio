@@ -3,8 +3,8 @@
 
 import type * as React from "react";
 import { formatDistanceToNow } from "date-fns";
-import { Check, Edit, Trash2, Calendar, Flag, ChevronDown, ChevronUp } from "lucide-react"; // Import Chevron icons
-import { useState } from "react"; // Import useState
+import { Check, Edit, Trash2, Calendar, Flag, ChevronDown, ChevronUp, Loader2 } from "lucide-react"; // Import Loader2
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,14 +30,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-
+import { buttonVariants } from "@/components/ui/button"; // Import buttonVariants
 
 interface TaskCardProps {
   task: Task;
   onToggleComplete: (id: string, completed: boolean) => void;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
-  viewMode?: 'list' | 'grid'; // Add viewMode prop
+  viewMode?: 'list' | 'grid';
+  isUpdating?: boolean; // Add prop for loading state
 }
 
 const priorityColors: Record<TaskPriority, string> = {
@@ -53,27 +54,26 @@ const priorityIcons: Record<TaskPriority, React.ReactNode> = {
 }
 
 
-export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 'list' }: TaskCardProps) {
+export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 'list', isUpdating = false }: TaskCardProps) {
   const timeRemaining = formatDistanceToNow(task.deadline, { addSuffix: true });
   const isOverdue = !task.completed && new Date() > task.deadline;
-  const [showDescription, setShowDescription] = useState(false); // State for description visibility
+  const [showDescription, setShowDescription] = useState(false);
 
   const toggleDescription = () => setShowDescription(!showDescription);
-
-  // Only show description toggle if description exists and view is list
   const canToggleDescription = !!task.description && viewMode === 'list';
 
   return (
     <Card className={cn(
         "w-full transition-opacity duration-300",
         task.completed && "opacity-60",
-        viewMode === 'list' && "flex flex-col sm:flex-row", // Flex layout for list view
-        viewMode === 'grid' && "flex flex-col" // Standard card layout for grid view
+        isUpdating && "opacity-50 pointer-events-none", // Dim card during updates
+        viewMode === 'list' && "flex flex-col sm:flex-row",
+        viewMode === 'grid' && "flex flex-col"
       )}>
-       {/* Checkbox and Main Info (Consistent across views) */}
+       {/* Checkbox and Main Info */}
        <div className={cn(
-           "flex items-start space-x-4 p-4", // Padding for this section
-           viewMode === 'list' && "flex-shrink-0 sm:w-1/3 md:w-1/4 lg:w-1/5 border-b sm:border-b-0 sm:border-r" // Width and border for list view
+           "flex items-start space-x-4 p-4",
+           viewMode === 'list' && "flex-shrink-0 sm:w-1/3 md:w-1/4 lg:w-1/5 border-b sm:border-b-0 sm:border-r"
         )}>
          <Checkbox
             id={`task-${task.id}`}
@@ -81,12 +81,12 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
             onCheckedChange={(checked) => onToggleComplete(task.id, !!checked)}
             className="mt-1 flex-shrink-0"
             aria-labelledby={`title-${task.id}`}
+            disabled={isUpdating} // Disable during update
             />
-          <div className="flex-1 min-w-0"> {/* Ensure text wraps */}
+          <div className="flex-1 min-w-0">
              <CardTitle id={`title-${task.id}`} className={cn("text-lg", task.completed && "line-through")}>
                 {task.title}
              </CardTitle>
-            {/* Show description differently based on view */}
              {task.description && viewMode === 'grid' && (
                  <CardDescription className="mt-1 text-sm break-words whitespace-pre-wrap">
                     {task.description}
@@ -95,12 +95,12 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
          </div>
       </div>
 
-       {/* Details and Actions (Layout adjusts based on view) */}
+       {/* Details and Actions */}
       <div className={cn(
-          "flex-1 flex flex-col", // Take remaining space and column layout
-           viewMode === 'list' ? "p-4 justify-between" : "p-4 pt-0" // Different padding/alignment
+          "flex-1 flex flex-col",
+           viewMode === 'list' ? "p-4 justify-between" : "p-4 pt-0"
         )}>
-        {/* Description for List View (Collapsible) */}
+        {/* Description for List View */}
         {task.description && viewMode === 'list' && (
           <div className="mb-3">
             <button
@@ -108,6 +108,7 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
               className="flex items-center text-xs text-muted-foreground hover:text-foreground focus:outline-none"
               aria-expanded={showDescription}
               aria-controls={`desc-${task.id}`}
+              disabled={isUpdating}
             >
               {showDescription ? 'Hide Description' : 'Show Description'}
               {showDescription ? <ChevronUp className="ml-1 h-3 w-3"/> : <ChevronDown className="ml-1 h-3 w-3"/>}
@@ -122,9 +123,9 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
 
          <CardFooter className={cn(
              "flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs text-muted-foreground p-0 gap-3",
-             viewMode === 'list' ? "mt-auto" : "mt-4" // Push to bottom in list view, add margin in grid
+             viewMode === 'list' ? "mt-auto" : "mt-4"
          )}>
-             <div className="flex flex-wrap items-center gap-x-3 gap-y-1"> {/* Allow wrapping */}
+             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <Badge variant="outline" className={cn("capitalize flex items-center gap-1 px-2 py-0.5", priorityColors[task.priority])}>
                     {priorityIcons[task.priority]}
                     {task.priority}
@@ -136,42 +137,47 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
                     </span>
                 </div>
              </div>
-             <div className="flex items-center space-x-1 flex-shrink-0 mt-2 sm:mt-0"> {/* Action buttons */}
+             <div className="flex items-center space-x-1 flex-shrink-0 mt-2 sm:mt-0">
                  {task.completed && (
                   <div className="flex items-center text-accent mr-2">
                     <Check className="h-4 w-4 mr-1" />
                     <span className="text-xs">Completed</span>
                   </div>
                 )}
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(task)} aria-label="Edit Task">
-                    <Edit className="h-4 w-4" />
-                </Button>
-                 <AlertDialog>
-                     <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete Task">
-                             <Trash2 className="h-4 w-4" />
-                         </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the task "{task.title}".
-                        </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => onDelete(task.id)} className={buttonVariants({ variant: "destructive" })}>Delete</AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-
+                {isUpdating ? ( // Show loader on action buttons when updating
+                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                ) : (
+                <>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(task)} aria-label="Edit Task" disabled={isUpdating}>
+                        <Edit className="h-4 w-4" />
+                    </Button>
+                     <AlertDialog>
+                         <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Delete Task" disabled={isUpdating}>
+                                 <Trash2 className="h-4 w-4" />
+                             </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                This action cannot be undone. This will permanently delete the task "{task.title}".
+                            </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                            <AlertDialogCancel disabled={isUpdating}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => onDelete(task.id)} className={buttonVariants({ variant: "destructive" })} disabled={isUpdating}>
+                                {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                Delete
+                            </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                 </>
+                 )}
              </div>
          </CardFooter>
        </div>
     </Card>
   );
 }
-// Import buttonVariants for AlertDialog action styling
-import { buttonVariants } from "@/components/ui/button"
-

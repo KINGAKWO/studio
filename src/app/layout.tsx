@@ -1,7 +1,9 @@
-import type {Metadata} from 'next';
+import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
-import { Toaster } from "@/components/ui/toaster" // Import Toaster
+import { Toaster } from "@/components/ui/toaster"; // Import Toaster
+import { ThemeProvider } from "@/components/theme-provider"; // Import ThemeProvider
+import { QueryProvider } from "@/components/query-provider"; // Import QueryProvider
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -24,10 +26,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning> {/* suppressHydrationWarning for next-themes */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {children}
-        <Toaster /> {/* Add Toaster component here */}
+        <QueryProvider> {/* Wrap with QueryProvider */}
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            {children}
+            <Toaster />
+          </ThemeProvider>
+        </QueryProvider>
       </body>
     </html>
   );
