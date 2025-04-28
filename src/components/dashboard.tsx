@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from "react";
@@ -13,6 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils"; // Import cn utility
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert components
+import { Info } from 'lucide-react'; // Import Info icon
 
 // Mock task data (replace with actual data fetching)
 const initialTasks: Task[] = [
@@ -32,7 +35,7 @@ export function Dashboard() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('deadline');
-  const [filterOption, setFilterOption] = useState<FilterOption>('all');
+  const [filterOption, setFilterOption] = useState<FilterOption>('incomplete'); // Default to incomplete
   const [viewOption, setViewOption] = useState<ViewOption>('list');
 
   const handleAddTask = async (data: Omit<Task, 'id' | 'completed'>) => {
@@ -57,6 +60,7 @@ export function Dashboard() {
       setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...editingTask, ...data } : t));
       setIsSubmitting(false);
       setEditingTask(null); // Close editing mode/dialog
+      setIsAddDialogOpen(false); // Explicitly close dialog after editing
   };
 
   const handleToggleComplete = (id: string, completed: boolean) => {
@@ -84,8 +88,9 @@ export function Dashboard() {
 
   const completedTasks = useMemo(() => tasks.filter(task => task.completed).length, [tasks]);
   const totalTasks = tasks.length;
+  const incompleteTasksCount = totalTasks - completedTasks;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const upcomingTasks = useMemo(() => tasks.filter(task => !task.completed && task.deadline > new Date()).sort((a, b) => a.deadline.getTime() - b.deadline.getTime()).slice(0, 3), [tasks]);
+  const upcomingTasks = useMemo(() => tasks.filter(task => !task.completed && task.deadline >= new Date()).sort((a, b) => a.deadline.getTime() - b.deadline.getTime()).slice(0, 3), [tasks]);
 
 
   const priorityOrder: Record<TaskPriority, number> = { high: 3, medium: 2, low: 1 };
@@ -99,6 +104,13 @@ export function Dashboard() {
     }
 
     return filtered.sort((a, b) => {
+      // Completed tasks should always appear after incomplete tasks if sorting by deadline/priority
+      if (sortOption !== 'title') {
+          if (a.completed !== b.completed) {
+              return a.completed ? 1 : -1;
+          }
+      }
+
       switch (sortOption) {
         case 'deadline':
           return a.deadline.getTime() - b.deadline.getTime();
@@ -127,10 +139,13 @@ export function Dashboard() {
        <section className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
          <Card>
            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-             <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
+             <CardTitle className="text-sm font-medium">Incomplete Tasks</CardTitle>
            </CardHeader>
            <CardContent>
-             <div className="text-2xl font-bold">{totalTasks}</div>
+             <div className="text-2xl font-bold">{incompleteTasksCount}</div>
+              <p className="text-xs text-muted-foreground">
+                {completedTasks} completed out of {totalTasks}
+             </p>
            </CardContent>
          </Card>
          <Card>
@@ -150,10 +165,11 @@ export function Dashboard() {
                 {upcomingTasks.length > 0 ? (
                     <ul className="space-y-1 text-sm text-muted-foreground">
                     {upcomingTasks.map(task => (
-                        <li key={task.id} className="flex justify-between">
-                        <span>{task.title}</span>
-                        {/* Use imported format function */}
-                        <span>{format(task.deadline, 'MMM dd')}</span>
+                        <li key={task.id} className="flex justify-between items-center">
+                        <span className="truncate pr-2">{task.title}</span>
+                        <span className="flex-shrink-0 whitespace-nowrap">
+                            {format(task.deadline, 'MMM dd')} {/* Correct usage */}
+                        </span>
                         </li>
                     ))}
                     </ul>
@@ -163,6 +179,23 @@ export function Dashboard() {
             </CardContent>
           </Card>
        </section>
+
+        {/* Pending Features Alert */}
+        <Alert className="mb-8">
+             <Info className="h-4 w-4" />
+             <AlertTitle>Work in Progress</AlertTitle>
+             <AlertDescription>
+                 The following features are planned but not yet implemented:
+                 <ul className="list-disc list-inside mt-1 text-xs">
+                     <li>Deadline reminders via push notifications</li>
+                     <li>Calendar sync (e.g., Google Calendar)</li>
+                     <li>Offline access</li>
+                     <li>Task report generation</li>
+                     <li>Firebase integration for data persistence</li>
+                 </ul>
+             </AlertDescription>
+         </Alert>
+
 
       {/* Task List Section */}
       <section>
@@ -177,7 +210,7 @@ export function Dashboard() {
                         <Plus className="mr-2 h-4 w-4" /> Add New Task
                     </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px]">
+                <DialogContent className="sm:max-w-[425px] md:max-w-lg">
                     <DialogHeader>
                     <DialogTitle>{editingTask ? 'Edit Task' : 'Add New Task'}</DialogTitle>
                     </DialogHeader>
@@ -195,9 +228,9 @@ export function Dashboard() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <Tabs value={filterOption} onValueChange={(value) => setFilterOption(value as FilterOption)}>
                 <TabsList>
-                    <TabsTrigger value="all">All</TabsTrigger>
                     <TabsTrigger value="incomplete">Incomplete</TabsTrigger>
                     <TabsTrigger value="completed">Completed</TabsTrigger>
+                    <TabsTrigger value="all">All</TabsTrigger>
                 </TabsList>
             </Tabs>
 
@@ -234,25 +267,24 @@ export function Dashboard() {
                     onToggleComplete={handleToggleComplete}
                     onEdit={startEditTask}
                     onDelete={handleDeleteTask}
+                    viewMode={viewOption} // Pass view mode to TaskCard
                 />
                 ))}
           </div>
         ) : (
-          <div className="text-center text-muted-foreground mt-8">
-            <p>No tasks found.</p>
-            {filterOption === 'all' && (
-                <p>Click "Add New Task" to get started!</p>
+          <div className="text-center text-muted-foreground mt-8 border border-dashed rounded-lg p-8">
+            <p className="font-semibold">No tasks match your current filters.</p>
+             {filterOption !== 'all' && (
+                 <p className="text-sm">Try selecting "All" tasks to see everything.</p>
+            )}
+            {tasks.length === 0 && (
+                <p className="text-sm mt-2">Looks like you haven't added any tasks yet. Click "Add New Task" to get started!</p>
             )}
           </div>
         )}
       </section>
-       {/* Reminder and Calendar Sync notes */}
-        <footer className="mt-12 text-center text-sm text-muted-foreground">
-            <p>Deadline reminders via push notifications are active.</p>
-            <p>Calendar sync with Google Calendar is pending implementation.</p>
-            <p>Offline access is currently not supported.</p>
-            <p>Report generation is pending implementation.</p>
-        </footer>
+       {/* Footer Removed - moved to Alert */}
     </div>
   );
 }
+
