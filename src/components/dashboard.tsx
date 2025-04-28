@@ -1,17 +1,17 @@
 
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { format } from "date-fns";
+import React, { useState, useMemo, useEffect } from "react"; // Added useEffect
+import { format, formatDistanceToNow } from "date-fns"; // Added formatDistanceToNow
 import { Timestamp, collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, onSnapshot, orderBy, writeBatch } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, ListFilter, LayoutGrid, List, Info, Tag, Loader2 } from "lucide-react"; // Added Loader2 import
+import { Plus, ListFilter, LayoutGrid, List, Info, Tag, Loader2, AlertCircle, CheckCircle, Calendar } from "lucide-react"; // Added Calendar
 import { Button } from "@/components/ui/button";
 import { AddTaskForm } from "@/components/add-task-form";
 import { TaskCard } from "@/components/task-card";
 import type { Task, TaskPriority, TaskDocument, TaskInputData } from "@/types/task";
 import { Progress } from "@/components/ui/progress";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card"; // Added CardFooter
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -20,6 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { db } from "@/lib/firebase"; // Import Firestore instance
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme-toggle"; // Import ThemeToggle
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
 type SortOption = 'deadline' | 'priority' | 'title' | 'category'; // Added category sort
 type FilterOption = 'all' | 'completed' | 'incomplete';
@@ -97,6 +98,7 @@ const deleteTaskMutation = async (id: string): Promise<void> => {
 
 export function Dashboard() {
   const { data: tasks = [], isLoading, error } = useTasks();
+  const [isMounted, setIsMounted] = useState(false); // State to track client-side mounting
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('deadline');
@@ -106,6 +108,12 @@ export function Dashboard() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+   // Ensure component is mounted on the client before rendering potentially mismatched content
+   useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
 
   // --- Mutations ---
   const { mutate: addTask, isPending: isAddingTask } = useMutation({
@@ -300,46 +308,56 @@ export function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Incomplete</CardTitle>
+            <List className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{incompleteTasksCount}</div>
+            <div className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-1/2" /> : incompleteTasksCount}</div>
              <p className="text-xs text-muted-foreground">
-               {completedTasks} completed
+                {isLoading ? <Skeleton className="h-3 w-2/3 mt-1" /> : `${completedTasks} completed`}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Completion</CardTitle>
+             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold mb-2">{completionRate}%</div>
-            <Progress value={completionRate} aria-label={`${completionRate}% tasks completed`} />
+            <div className="text-2xl font-bold mb-2">{isLoading ? <Skeleton className="h-8 w-1/3" /> : `${completionRate}%`}</div>
+             {isLoading ? <Skeleton className="h-4 w-full" /> : <Progress value={completionRate} aria-label={`${completionRate}% tasks completed`} />}
           </CardContent>
         </Card>
         <Card>
            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+              <AlertCircle className="h-4 w-4 text-destructive" />
            </CardHeader>
            <CardContent>
-             <div className="text-2xl font-bold text-destructive">{overdueTasksCount}</div>
+             <div className="text-2xl font-bold text-destructive">{isLoading ? <Skeleton className="h-8 w-1/2" /> : overdueTasksCount}</div>
               <p className="text-xs text-muted-foreground">
-                Tasks past deadline
+                 {isLoading ? <Skeleton className="h-3 w-3/4 mt-1" /> : `Tasks past deadline`}
              </p>
            </CardContent>
          </Card>
          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                <CardTitle className="text-sm font-medium">Upcoming</CardTitle>
+               <Calendar className="h-4 w-4 text-muted-foreground" />
            </CardHeader>
            <CardContent>
-               {upcomingTasks.length > 0 ? (
+               {isLoading ? (
+                   <div className="space-y-2">
+                     <Skeleton className="h-3 w-full" />
+                     <Skeleton className="h-3 w-5/6" />
+                     <Skeleton className="h-3 w-2/3" />
+                  </div>
+               ) : upcomingTasks.length > 0 ? (
                    <ul className="space-y-1 text-xs text-muted-foreground">
                    {upcomingTasks.map(task => (
                        <li key={task.id} className="flex justify-between items-center gap-2">
                        <span className="truncate">{task.title}</span>
                        <span className="flex-shrink-0 whitespace-nowrap">
-                           {format(task.deadline, 'MMM dd')}
+                          {isMounted ? formatDistanceToNow(task.deadline, { addSuffix: true }) : <Skeleton className="h-3 w-12 inline-block" />}
                        </span>
                        </li>
                    ))}
@@ -351,8 +369,7 @@ export function Dashboard() {
          </Card>
       </section>
 
-       {/* Planned Features Alert - Removed for cleaner UI */}
-       {/* <Alert className="mb-8 border-blue-500 dark:border-blue-400"> ... </Alert> */}
+
 
 
       {/* Task List Section */}
@@ -373,7 +390,7 @@ export function Dashboard() {
                     </TabsList>
                 </Tabs>
                  {uniqueCategories.length > 1 && ( // Only show category filter if there are categories
-                     <Select value={categoryFilter} onValueChange={(value) => setCategoryFilter(value)}>
+                     <Select value={categoryFilter} onValueChange={(value) => setCategoryFilter(value)} disabled={isLoading}>
                          <SelectTrigger className="w-auto md:w-[160px] h-9 text-xs">
                               <Tag className="mr-1.5 h-3.5 w-3.5 text-muted-foreground"/>
                              <SelectValue placeholder="Filter by Category" />
@@ -390,7 +407,7 @@ export function Dashboard() {
             </div>
 
              <div className="flex items-center gap-2"> {/* Sort and View Group */}
-                <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
+                <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)} disabled={isLoading}>
                     <SelectTrigger className="w-auto md:w-[160px] h-9 text-xs">
                         <ListFilter className="mr-1.5 h-3.5 w-3.5 text-muted-foreground"/>
                         <SelectValue placeholder="Sort by..." />
@@ -404,8 +421,8 @@ export function Dashboard() {
                 </Select>
                  <Tabs value={viewOption} onValueChange={(value) => setViewOption(value as ViewOption)}>
                     <TabsList className="grid w-full grid-cols-2 h-9">
-                        <TabsTrigger value="list" className="h-7"><List className="h-4 w-4"/></TabsTrigger>
-                        <TabsTrigger value="grid" className="h-7"><LayoutGrid className="h-4 w-4"/></TabsTrigger>
+                        <TabsTrigger value="list" className="h-7" disabled={isLoading}><List className="h-4 w-4"/></TabsTrigger>
+                        <TabsTrigger value="grid" className="h-7" disabled={isLoading}><LayoutGrid className="h-4 w-4"/></TabsTrigger>
                     </TabsList>
                 </Tabs>
             </div>
@@ -413,8 +430,41 @@ export function Dashboard() {
 
 
         {/* Task Display Area */}
-        {isLoading && <div className="text-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary mx-auto"/></div>}
+        {isLoading && (
+             <div className={cn(
+                 "gap-4",
+                  viewOption === 'list' ? "space-y-4" : "grid md:grid-cols-2 lg:grid-cols-3"
+              )}>
+                 {[...Array(3)].map((_, i) => (
+                    <Card key={i} className={cn(viewOption === 'list' ? "flex flex-col sm:flex-row" : "flex flex-col")}>
+                        <CardHeader className={cn("flex items-start space-x-4 p-4", viewOption === 'list' && "flex-shrink-0 sm:w-auto sm:max-w-[40%] border-b sm:border-b-0 sm:border-r")}>
+                           <Skeleton className="h-4 w-4 rounded-sm mt-1"/>
+                           <div className="flex-1 space-y-1">
+                             <Skeleton className="h-5 w-3/4" />
+                              {viewOption === 'grid' && <Skeleton className="h-3 w-full" />}
+                              {viewOption === 'grid' && <Skeleton className="h-3 w-5/6" />}
+                           </div>
+                        </CardHeader>
+                        <CardContent className={cn("flex-1 flex flex-col p-4", viewOption === 'list' ? "justify-between" : "pt-0")}>
+                             {viewOption === 'list' && <Skeleton className="h-3 w-24 mb-3" />}
+                            <CardFooter className={cn("flex flex-col sm:flex-row justify-between items-start sm:items-center p-0 gap-3 text-xs", viewOption === 'list' ? "mt-auto" : "mt-4")}>
+                               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    <Skeleton className="h-5 w-16 rounded-full" />
+                                    <Skeleton className="h-5 w-12 rounded-full" />
+                                    <Skeleton className="h-3 w-24" />
+                                </div>
+                                <div className="flex items-center space-x-1 self-end sm:self-center mt-2 sm:mt-0">
+                                     <Skeleton className="h-7 w-7 rounded" />
+                                     <Skeleton className="h-7 w-7 rounded" />
+                                </div>
+                            </CardFooter>
+                        </CardContent>
+                    </Card>
+                 ))}
+             </div>
+        )}
         {error && <Alert variant="destructive" className="my-4">
+                    <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Error</AlertTitle>
                     <AlertDescription>Failed to load tasks: {error.message}</AlertDescription>
                     </Alert>}
@@ -446,7 +496,7 @@ export function Dashboard() {
                 ) : (
                      <p className="text-sm mt-2">Try adjusting the status or category filters.</p>
                 )}
-                 <Button variant="outline" size="sm" className="mt-4 text-xs" onClick={() => { setFilterOption('all'); setCategoryFilter('all'); }}>
+                 <Button variant="outline" size="sm" className="mt-4 text-xs" onClick={() => { setFilterOption('incomplete'); setCategoryFilter('all'); }}>
                     Reset Filters
                 </Button>
             </div>
@@ -456,3 +506,6 @@ export function Dashboard() {
     </div>
   );
 }
+
+
+    

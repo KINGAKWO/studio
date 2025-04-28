@@ -1,3 +1,4 @@
+
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
@@ -29,14 +30,15 @@ const CardHeader = React.forwardRef<
 ))
 CardHeader.displayName = "CardHeader"
 
+// Changed CardTitle to use h3 for semantic correctness
 const CardTitle = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
+  HTMLHeadingElement, // Changed element type to HTMLHeadingElement
+  React.HTMLAttributes<HTMLHeadingElement> // Changed attributes type
 >(({ className, ...props }, ref) => (
-  <div
+  <h3 // Changed tag to h3
     ref={ref}
     className={cn(
-      "text-2xl font-semibold leading-none tracking-tight",
+      "text-lg font-semibold leading-none tracking-tight", // Adjusted text size if needed
       className
     )}
     {...props}
@@ -44,11 +46,12 @@ const CardTitle = React.forwardRef<
 ))
 CardTitle.displayName = "CardTitle"
 
+// Changed CardDescription to use p for semantic correctness
 const CardDescription = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
+  HTMLParagraphElement, // Changed element type to HTMLParagraphElement
+  React.HTMLAttributes<HTMLParagraphElement> // Changed attributes type
 >(({ className, ...props }, ref) => (
-  <div
+  <p // Changed tag to p
     ref={ref}
     className={cn("text-sm text-muted-foreground", className)}
     {...props}
@@ -77,3 +80,5 @@ const CardFooter = React.forwardRef<
 CardFooter.displayName = "CardFooter"
 
 export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent }
+
+    

@@ -3,8 +3,8 @@
 
 import type * as React from "react";
 import { formatDistanceToNow } from "date-fns";
-import { Check, Edit, Trash2, Calendar, Flag, ChevronDown, ChevronUp, Loader2, Tag } from "lucide-react"; // Import Loader2 and Tag
-import { useState } from "react";
+import { Check, Edit, Trash2, Calendar, Flag, ChevronDown, ChevronUp, Loader2, Tag } from "lucide-react";
+import { useEffect, useState } from "react"; // Import useEffect and useState
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { buttonVariants } from "@/components/ui/button"; // Import buttonVariants
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton for placeholder
 
 interface TaskCardProps {
   task: Task;
@@ -55,9 +56,17 @@ const priorityIcons: Record<TaskPriority, React.ReactNode> = {
 
 
 export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 'list', isUpdating = false }: TaskCardProps) {
-  const timeRemaining = formatDistanceToNow(task.deadline, { addSuffix: true });
-  const isOverdue = !task.completed && new Date() > task.deadline;
+  const [isMounted, setIsMounted] = useState(false); // State to track client-side mounting
   const [showDescription, setShowDescription] = useState(false);
+
+  // Ensure component is mounted on the client before rendering potentially mismatched content
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const timeRemaining = isMounted ? formatDistanceToNow(task.deadline, { addSuffix: true }) : '';
+  const isOverdue = !task.completed && new Date() > task.deadline;
+
 
   const toggleDescription = () => setShowDescription(!showDescription);
   const canToggleDescription = !!task.description && viewMode === 'list';
@@ -138,9 +147,13 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
                 </Badge>
                 <div className="flex items-center gap-1">
                      <Calendar className="h-3 w-3" />
-                    <span className={cn(isOverdue && "text-destructive font-medium")}>
-                      {isOverdue ? `Overdue ${timeRemaining}` : `Due ${timeRemaining}`}
-                    </span>
+                     {isMounted ? (
+                        <span className={cn(isOverdue && "text-destructive font-medium")}>
+                        {isOverdue ? `Overdue ${timeRemaining}` : `Due ${timeRemaining}`}
+                        </span>
+                     ) : (
+                        <Skeleton className="h-3 w-20" /> // Show skeleton placeholder before mounting
+                     )}
                 </div>
              </div>
              <div className="flex items-center space-x-1 flex-shrink-0 mt-2 sm:mt-0 self-end sm:self-center"> {/* Align actions */}
