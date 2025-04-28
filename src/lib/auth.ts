@@ -2,6 +2,10 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
+// IMPORTANT: Ensure NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and NEXTAUTH_URL
+// are set in your .env file or environment variables.
+// The app will not function correctly without them.
+
 export const authOptions: NextAuthOptions = {
   // Secret for session encryption (required for JWT).
   // It's recommended to set this in the .env file.
@@ -37,22 +41,22 @@ export const authOptions: NextAuthOptions = {
       // Add user id to the token
       if (profile) {
         // Depending on the provider, the ID might be in 'sub' or another field
-        token.id = profile.sub ?? token.sub;
+        // Use optional chaining and nullish coalescing for safety
+        token.id = profile.sub ?? token.sub ?? profile.id ?? token.id;
       }
       return token;
     },
     async session({ session, token }) {
       // Send properties to the client, like access_token and user ID from the token.
       // Ensure session.user exists
-      if (session.user) {
-        // Make sure to declare these properties in your session type if using TypeScript
-        // (session as any).accessToken = token.accessToken;
-        // (session as any).provider = token.provider;
-        // (session.user as any).id = token.id; // Add user ID to the session user object
+      if (session.user && token.id) {
+         // Assign user ID from token to session user object
+         // Ensure the session user type includes 'id' or cast appropriately
+         (session.user as { id?: string | unknown }).id = token.id;
       }
        // The default session callback already adds basic user info (name, email, image).
        // If you need more specific data from the token, assign it here.
-      session.accessToken = token.accessToken as string | undefined; // Type assertion might be needed
+      (session as { accessToken?: string | unknown }).accessToken = token.accessToken; // Type assertion might be needed
 
       return session;
     },
@@ -81,3 +85,5 @@ export const authOptions: NextAuthOptions = {
 // NextAuth uses this for constructing redirect URLs.
 // Example: NEXTAUTH_URL=http://localhost:3000 for development
 // Example: NEXTAUTH_URL=https://yourdomain.com for production
+
+```
