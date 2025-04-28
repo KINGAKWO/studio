@@ -5,7 +5,7 @@ import React, { useState, useMemo } from "react";
 import { format } from "date-fns";
 import { Timestamp, collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, onSnapshot, orderBy, writeBatch } from "firebase/firestore";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, ListFilter, LayoutGrid, List, Info } from "lucide-react";
+import { Plus, ListFilter, LayoutGrid, List, Info, Tag, Loader2 } from "lucide-react"; // Added Loader2 import
 import { Button } from "@/components/ui/button";
 import { AddTaskForm } from "@/components/add-task-form";
 import { TaskCard } from "@/components/task-card";
@@ -21,7 +21,7 @@ import { db } from "@/lib/firebase"; // Import Firestore instance
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme-toggle"; // Import ThemeToggle
 
-type SortOption = 'deadline' | 'priority' | 'title';
+type SortOption = 'deadline' | 'priority' | 'title' | 'category'; // Added category sort
 type FilterOption = 'all' | 'completed' | 'incomplete';
 type ViewOption = 'list' | 'grid';
 
@@ -33,14 +33,19 @@ const useTasks = () => {
     queryKey: ['tasks'],
     queryFn: () => {
       return new Promise((resolve, reject) => {
-        const q = query(collection(db, "tasks"), orderBy("deadline", "asc")); // Adjust ordering as needed
+        const q = query(collection(db, "tasks"), orderBy("createdAt", "desc")); // Default order by creation time (desc)
         const unsubscribe = onSnapshot(q, (querySnapshot) => {
           const tasksData: Task[] = querySnapshot.docs.map(doc => {
             const data = doc.data() as Omit<TaskDocument, 'id'>;
             return {
               id: doc.id,
-              ...data,
+              title: data.title,
+              description: data.description,
               deadline: data.deadline.toDate(), // Convert Timestamp to Date
+              priority: data.priority,
+              completed: data.completed,
+              category: data.category, // Include category
+              createdAt: data.createdAt?.toDate(), // Convert Timestamp to Date if exists
             };
           });
           resolve(tasksData);
@@ -62,17 +67,19 @@ const addTaskMutation = async (newTaskData: TaskInputData): Promise<string> => {
     ...newTaskData,
     deadline: Timestamp.fromDate(newTaskData.deadline), // Convert Date to Timestamp
     completed: false, // Ensure new tasks are incomplete
-    createdAt: serverTimestamp(), // Optional: track creation time
+    createdAt: serverTimestamp(), // Track creation time
+    category: newTaskData.category || "", // Ensure category is saved (or empty string)
   });
   return docRef.id;
 };
 
 const updateTaskMutation = async (taskData: Task): Promise<void> => {
-    const { id, ...dataToUpdate } = taskData;
+    const { id, createdAt, ...dataToUpdate } = taskData; // Exclude createdAt from update data
     const taskRef = doc(db, "tasks", id);
     await updateDoc(taskRef, {
       ...dataToUpdate,
       deadline: Timestamp.fromDate(dataToUpdate.deadline), // Convert Date back to Timestamp
+      category: dataToUpdate.category || "", // Ensure category is updated (or empty string)
     });
 };
 
@@ -95,10 +102,12 @@ export function Dashboard() {
   const [sortOption, setSortOption] = useState<SortOption>('deadline');
   const [filterOption, setFilterOption] = useState<FilterOption>('incomplete');
   const [viewOption, setViewOption] = useState<ViewOption>('list');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all'); // State for category filter
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // --- Mutations ---
   const { mutate: addTask, isPending: isAddingTask } = useMutation({
     mutationFn: addTaskMutation,
     onSuccess: () => {
@@ -150,21 +159,20 @@ export function Dashboard() {
     },
   });
 
-
+  // --- Event Handlers ---
   const handleAddTaskSubmit = (data: TaskInputData) => {
     addTask(data);
   };
 
   const handleEditTaskSubmit = (data: TaskInputData) => {
     if (!editingTask) return;
-     // Construct the full task object for the mutation function
      const taskToUpdate: Task = {
-       ...editingTask, // Keep the original ID and completed status
+       ...editingTask, // Keep the original ID, completed status, and createdAt
        title: data.title,
        description: data.description,
        deadline: data.deadline,
        priority: data.priority,
-       // category: data.category, // Include if category is in the form
+       category: data.category, // Include category
      };
     updateTask(taskToUpdate);
   };
@@ -174,7 +182,6 @@ export function Dashboard() {
   };
 
   const handleDeleteTask = (id: string) => {
-    // Confirmation is handled within TaskCard's AlertDialog
     deleteTask(id);
   };
 
@@ -196,22 +203,42 @@ export function Dashboard() {
   const upcomingTasks = useMemo(() => tasks.filter(task => !task.completed && task.deadline >= new Date()).sort((a, b) => a.deadline.getTime() - b.deadline.getTime()).slice(0, 3), [tasks]);
   const overdueTasksCount = useMemo(() => tasks.filter(task => !task.completed && task.deadline < new Date()).length, [tasks]);
 
+  // Extract unique categories for filtering
+  const uniqueCategories = useMemo(() => {
+    const categories = new Set<string>();
+    tasks.forEach(task => {
+      if (task.category) {
+        categories.add(task.category);
+      }
+    });
+    return ['all', ...Array.from(categories).sort()]; // Add 'all' option
+  }, [tasks]);
+
 
   const priorityOrder: Record<TaskPriority, number> = { high: 3, medium: 2, low: 1 };
 
   const filteredAndSortedTasks = useMemo(() => {
     let filtered = tasks;
+
+    // Apply status filter
     if (filterOption === 'completed') {
-      filtered = tasks.filter(t => t.completed);
+      filtered = filtered.filter(t => t.completed);
     } else if (filterOption === 'incomplete') {
-      filtered = tasks.filter(t => !t.completed);
+      filtered = filtered.filter(t => !t.completed);
     }
 
+     // Apply category filter
+     if (categoryFilter !== 'all') {
+        filtered = filtered.filter(t => t.category === categoryFilter);
+     }
+
+
+    // Apply sorting
     return filtered.sort((a, b) => {
-       // Basic completed status sorting (move completed down) - refined later if needed
-       if (a.completed !== b.completed) {
-         return a.completed ? 1 : -1;
-       }
+      // Always sort incomplete tasks before completed tasks if 'all' filter is active
+      if (filterOption === 'all' && a.completed !== b.completed) {
+        return a.completed ? 1 : -1;
+      }
 
       switch (sortOption) {
         case 'deadline':
@@ -222,40 +249,68 @@ export function Dashboard() {
           return a.deadline.getTime() - b.deadline.getTime(); // Secondary sort by deadline
         case 'title':
           return a.title.localeCompare(b.title);
+        case 'category': // Sort by category, then by deadline
+           const catA = a.category || '';
+           const catB = b.category || '';
+           if (catA !== catB) return catA.localeCompare(catB);
+           return a.deadline.getTime() - b.deadline.getTime();
         default:
           return 0;
       }
     });
-  }, [tasks, sortOption, filterOption]);
+  }, [tasks, sortOption, filterOption, categoryFilter]);
 
   const isSubmitting = isAddingTask || isUpdatingTask; // Combine loading states
 
   return (
     <div className="container mx-auto p-4 md:p-8">
-      <header className="mb-8 flex justify-between items-center">
+      <header className="mb-8 flex flex-wrap justify-between items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-primary mb-2">TaskWise Dashboard</h1>
-          <p className="text-muted-foreground">Your academic task management hub.</p>
+          <h1 className="text-3xl font-bold text-primary mb-1">TaskWise Dashboard</h1>
+          <p className="text-muted-foreground text-sm">Your academic task management hub.</p>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+            <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+               if (!open) cancelEdit();
+               setIsAddDialogOpen(open);
+            }}>
+                 <DialogTrigger asChild>
+                     <Button disabled={isLoading} size="sm">
+                         <Plus className="mr-2 h-4 w-4" /> Add Task
+                     </Button>
+                 </DialogTrigger>
+                 <DialogContent className="sm:max-w-lg md:max-w-xl"> {/* Adjusted width */}
+                     <DialogHeader>
+                     <DialogTitle>{editingTask ? 'Edit Task' : 'Add New Task'}</DialogTitle>
+                     </DialogHeader>
+                     <AddTaskForm
+                         onSubmit={editingTask ? handleEditTaskSubmit : handleAddTaskSubmit}
+                         initialData={editingTask ?? undefined}
+                         onCancel={cancelEdit}
+                         isSubmitting={isSubmitting}
+                     />
+                 </DialogContent>
+             </Dialog>
+            <ThemeToggle />
+        </div>
       </header>
 
        {/* Stats Section */}
-      <section className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4"> {/* Adjusted grid */}
+      <section className="mb-8 grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Incomplete Tasks</CardTitle>
+            <CardTitle className="text-sm font-medium">Incomplete</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{incompleteTasksCount}</div>
              <p className="text-xs text-muted-foreground">
-               {completedTasks} completed out of {totalTasks}
+               {completedTasks} completed
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
+            <CardTitle className="text-sm font-medium">Completion</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold mb-2">{completionRate}%</div>
@@ -264,25 +319,25 @@ export function Dashboard() {
         </Card>
         <Card>
            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Overdue Tasks</CardTitle>
+              <CardTitle className="text-sm font-medium">Overdue</CardTitle>
            </CardHeader>
            <CardContent>
              <div className="text-2xl font-bold text-destructive">{overdueTasksCount}</div>
               <p className="text-xs text-muted-foreground">
-                Tasks past their deadline
+                Tasks past deadline
              </p>
            </CardContent>
          </Card>
          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-               <CardTitle className="text-sm font-medium">Upcoming Deadlines</CardTitle>
+               <CardTitle className="text-sm font-medium">Upcoming</CardTitle>
            </CardHeader>
            <CardContent>
                {upcomingTasks.length > 0 ? (
-                   <ul className="space-y-1 text-sm text-muted-foreground">
+                   <ul className="space-y-1 text-xs text-muted-foreground">
                    {upcomingTasks.map(task => (
-                       <li key={task.id} className="flex justify-between items-center">
-                       <span className="truncate pr-2">{task.title}</span>
+                       <li key={task.id} className="flex justify-between items-center gap-2">
+                       <span className="truncate">{task.title}</span>
                        <span className="flex-shrink-0 whitespace-nowrap">
                            {format(task.deadline, 'MMM dd')}
                        </span>
@@ -290,76 +345,61 @@ export function Dashboard() {
                    ))}
                    </ul>
                ) : (
-                   <p className="text-sm text-muted-foreground">No immediate deadlines.</p>
+                   <p className="text-xs text-muted-foreground">No immediate deadlines.</p>
                )}
            </CardContent>
          </Card>
       </section>
 
-      {/* Planned Features Alert */}
-       <Alert className="mb-8 border-blue-500 dark:border-blue-400">
-         <Info className="h-4 w-4 text-blue-500 dark:text-blue-400" />
-         <AlertTitle className="text-blue-800 dark:text-blue-300">Future Enhancements</AlertTitle>
-         <AlertDescription className="text-blue-700 dark:text-blue-300">
-           Features planned for future updates:
-           <ul className="list-disc list-inside mt-1 text-xs">
-             <li>Deadline reminders (push notifications)</li>
-             <li>Calendar sync (e.g., Google Calendar)</li>
-             <li>Offline access improvements</li>
-             <li>Task report generation & analytics</li>
-             <li>Advanced filtering/categorization</li>
-           </ul>
-         </AlertDescription>
-       </Alert>
+       {/* Planned Features Alert - Removed for cleaner UI */}
+       {/* <Alert className="mb-8 border-blue-500 dark:border-blue-400"> ... </Alert> */}
 
 
       {/* Task List Section */}
       <section>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
           <h2 className="text-2xl font-semibold">Your Tasks</h2>
-           <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
-               if (!open) cancelEdit();
-               setIsAddDialogOpen(open);
-           }}>
-                <DialogTrigger asChild>
-                    <Button disabled={isLoading}> {/* Disable button while loading */}
-                        <Plus className="mr-2 h-4 w-4" /> Add New Task
-                    </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px] md:max-w-lg">
-                    <DialogHeader>
-                    <DialogTitle>{editingTask ? 'Edit Task' : 'Add New Task'}</DialogTitle>
-                    </DialogHeader>
-                    {/* Pass correct onSubmit based on mode */}
-                    <AddTaskForm
-                        onSubmit={editingTask ? handleEditTaskSubmit : handleAddTaskSubmit}
-                        initialData={editingTask ?? undefined}
-                        onCancel={cancelEdit}
-                        isSubmitting={isSubmitting}
-                    />
-                </DialogContent>
-            </Dialog>
+           {/* Add Task Dialog Trigger moved to header */}
         </div>
 
          {/* Filters and View Options */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-            <Tabs value={filterOption} onValueChange={(value) => setFilterOption(value as FilterOption)}>
-                <TabsList>
-                    <TabsTrigger value="incomplete">Incomplete</TabsTrigger>
-                    <TabsTrigger value="completed">Completed</TabsTrigger>
-                    <TabsTrigger value="all">All</TabsTrigger>
-                </TabsList>
-            </Tabs>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 flex-wrap">
+             <div className="flex items-center gap-2 flex-wrap"> {/* Filters Group */}
+                <Tabs value={filterOption} onValueChange={(value) => setFilterOption(value as FilterOption)}>
+                    <TabsList className="h-9">
+                        <TabsTrigger value="incomplete" className="text-xs px-2 h-7">Incomplete</TabsTrigger>
+                        <TabsTrigger value="completed" className="text-xs px-2 h-7">Completed</TabsTrigger>
+                        <TabsTrigger value="all" className="text-xs px-2 h-7">All</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+                 {uniqueCategories.length > 1 && ( // Only show category filter if there are categories
+                     <Select value={categoryFilter} onValueChange={(value) => setCategoryFilter(value)}>
+                         <SelectTrigger className="w-auto md:w-[160px] h-9 text-xs">
+                              <Tag className="mr-1.5 h-3.5 w-3.5 text-muted-foreground"/>
+                             <SelectValue placeholder="Filter by Category" />
+                         </SelectTrigger>
+                         <SelectContent>
+                             {uniqueCategories.map((category) => (
+                                 <SelectItem key={category} value={category} className="text-xs">
+                                     {category === 'all' ? 'All Categories' : category}
+                                 </SelectItem>
+                             ))}
+                         </SelectContent>
+                     </Select>
+                 )}
+            </div>
 
-             <div className="flex items-center gap-2">
+             <div className="flex items-center gap-2"> {/* Sort and View Group */}
                 <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-auto md:w-[160px] h-9 text-xs">
+                        <ListFilter className="mr-1.5 h-3.5 w-3.5 text-muted-foreground"/>
                         <SelectValue placeholder="Sort by..." />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="deadline">Sort by Deadline</SelectItem>
-                        <SelectItem value="priority">Sort by Priority</SelectItem>
-                        <SelectItem value="title">Sort by Title</SelectItem>
+                        <SelectItem value="deadline" className="text-xs">Sort by Deadline</SelectItem>
+                        <SelectItem value="priority" className="text-xs">Sort by Priority</SelectItem>
+                        <SelectItem value="title" className="text-xs">Sort by Title</SelectItem>
+                        <SelectItem value="category" className="text-xs">Sort by Category</SelectItem>
                     </SelectContent>
                 </Select>
                  <Tabs value={viewOption} onValueChange={(value) => setViewOption(value as ViewOption)}>
@@ -373,12 +413,15 @@ export function Dashboard() {
 
 
         {/* Task Display Area */}
-        {isLoading && <p>Loading tasks...</p>}
-        {error && <p className="text-destructive">Error loading tasks: {error.message}</p>}
+        {isLoading && <div className="text-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary mx-auto"/></div>}
+        {error && <Alert variant="destructive" className="my-4">
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>Failed to load tasks: {error.message}</AlertDescription>
+                    </Alert>}
         {!isLoading && !error && (
             filteredAndSortedTasks.length > 0 ? (
              <div className={cn(
-                 "gap-4",
+                 "gap-4 transition-all duration-300", // Added transition
                   viewOption === 'list' ? "space-y-4" : "grid md:grid-cols-2 lg:grid-cols-3"
               )}>
                   {filteredAndSortedTasks.map(task => (
@@ -394,15 +437,18 @@ export function Dashboard() {
                   ))}
             </div>
           ) : (
-            <div className="text-center text-muted-foreground mt-8 border border-dashed rounded-lg p-8">
-               <p className="font-semibold">
+            <div className="text-center text-muted-foreground mt-8 border border-dashed rounded-lg p-12">
+               <p className="font-semibold text-lg">
                    {tasks.length === 0 ? 'No tasks yet!' : 'No tasks match your current filters.'}
                </p>
                 {tasks.length === 0 ? (
-                     <p className="text-sm mt-2">Click "Add New Task" to get started!</p>
-                ) : filterOption !== 'all' && (
-                     <p className="text-sm">Try selecting "All" tasks or adjusting filters.</p>
+                     <p className="text-sm mt-2">Click "Add Task" in the header to get started!</p>
+                ) : (
+                     <p className="text-sm mt-2">Try adjusting the status or category filters.</p>
                 )}
+                 <Button variant="outline" size="sm" className="mt-4 text-xs" onClick={() => { setFilterOption('all'); setCategoryFilter('all'); }}>
+                    Reset Filters
+                </Button>
             </div>
           )
         )}

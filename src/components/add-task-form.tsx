@@ -46,7 +46,7 @@ const taskFormSchema = z.object({
   description: z.string().max(1000, "Description is too long").optional(),
   deadline: z.date({ required_error: "Deadline is required." }),
   priority: z.enum(priorities, { required_error: "Priority is required." }),
-  // category: z.string().optional(), // Add if using categories
+  category: z.string().max(50, "Category is too long").optional(), // Add category field
 });
 
 // Use TaskInputData for form values type
@@ -76,14 +76,14 @@ export function AddTaskForm({
           description: initialData.description || "",
           deadline: initialData.deadline, // Keep as Date object for the form
           priority: initialData.priority,
-          // category: initialData.category || "",
+          category: initialData.category || "", // Populate category if exists
         }
       : {
           title: "",
           description: "",
           deadline: undefined,
           priority: "medium",
-          // category: "",
+          category: "", // Default category
         },
   });
 
@@ -136,9 +136,11 @@ export function AddTaskForm({
     }
   };
 
+  const currentLoading = isSubmitting || isBreakingDown;
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6"> {/* Reduced spacing */}
         <FormField
           control={form.control}
           name="title"
@@ -146,7 +148,7 @@ export function AddTaskForm({
             <FormItem>
               <FormLabel>Title</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., Complete Math Homework" {...field} />
+                <Input placeholder="e.g., Complete Math Homework" {...field} disabled={currentLoading} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -157,14 +159,14 @@ export function AddTaskForm({
           name="description"
           render={({ field }) => (
             <FormItem>
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center mb-1">
                  <FormLabel>Description (Optional)</FormLabel>
                  <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={handleBreakdown}
-                    disabled={isBreakingDown || !form.watch('title') || isSubmitting} // Disable if AI or form is submitting
+                    disabled={currentLoading || !form.watch('title')}
                     className="text-xs"
                  >
                     {isBreakingDown ? (
@@ -178,97 +180,99 @@ export function AddTaskForm({
               <FormControl>
                 <Textarea
                   placeholder="e.g., Chapter 5, exercises 1-10. Or click 'Break Down with AI' for suggestions."
-                  className="resize-none min-h-[100px]"
+                  className="resize-none min-h-[80px]" // Slightly smaller height
                   {...field}
+                   disabled={currentLoading}
                 />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-         <FormField
-          control={form.control}
-          name="priority"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Priority</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting || isBreakingDown}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select task priority" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {priorities.map((priority) => (
-                    <SelectItem key={priority} value={priority} className="capitalize">
-                     {priority.charAt(0).toUpperCase() + priority.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="deadline"
-          render={({ field }) => (
-            <FormItem className="flex flex-col">
-              <FormLabel>Deadline</FormLabel>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <FormControl>
-                    <Button
-                      variant={"outline"}
-                      className={cn(
-                        "w-[240px] pl-3 text-left font-normal",
-                        !field.value && "text-muted-foreground"
-                      )}
-                      disabled={isSubmitting || isBreakingDown}
-                    >
-                      {field.value ? (
-                        format(field.value, "PPP")
-                      ) : (
-                        <span>Pick a date</span>
-                      )}
-                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                    </Button>
-                  </FormControl>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={field.value}
-                    onSelect={field.onChange}
-                    disabled={(date) => date < new Date(new Date().setDate(new Date().getDate() - 1))} // Disable past dates
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        {/* Add Category field if needed */}
-        {/* <FormField
-          control={form.control}
-          name="category"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Category (Optional)</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g., Homework, Project, Exam Prep" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        /> */}
+         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4"> {/* Grid for Priority, Deadline, Category */}
+             <FormField
+              control={form.control}
+              name="priority"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Priority</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={currentLoading}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select task priority" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {priorities.map((priority) => (
+                        <SelectItem key={priority} value={priority} className="capitalize">
+                         {priority.charAt(0).toUpperCase() + priority.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="deadline"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Deadline</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "w-full justify-start text-left font-normal", // Changed width to full
+                            !field.value && "text-muted-foreground"
+                          )}
+                          disabled={currentLoading}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4 opacity-50" /> {/* Icon on left */}
+                          {field.value ? (
+                            format(field.value, "PPP")
+                          ) : (
+                            <span>Pick a date</span>
+                          )}
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={field.value}
+                        onSelect={field.onChange}
+                        disabled={(date) => date < new Date(new Date().setDate(new Date().getDate() - 1))} // Disable past dates
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+             <FormField
+                control={form.control}
+                name="category"
+                render={({ field }) => (
+                    <FormItem>
+                    <FormLabel>Category (Optional)</FormLabel>
+                    <FormControl>
+                        <Input placeholder="e.g., Homework" {...field} disabled={currentLoading} />
+                    </FormControl>
+                    <FormMessage />
+                    </FormItem>
+                )}
+            />
+         </div>
 
-        <div className="flex justify-end space-x-2">
-            {onCancel && <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting || isBreakingDown}>Cancel</Button>}
-           <Button type="submit" disabled={isSubmitting || isBreakingDown}>
-            {(isSubmitting || isBreakingDown) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <div className="flex justify-end space-x-2 pt-4"> {/* Added padding top */}
+            {onCancel && <Button type="button" variant="outline" onClick={onCancel} disabled={currentLoading}>Cancel</Button>}
+           <Button type="submit" disabled={currentLoading}>
+            {currentLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {initialData ? "Save Changes" : "Add Task"}
           </Button>
         </div>

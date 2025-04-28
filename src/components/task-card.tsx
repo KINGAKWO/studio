@@ -3,7 +3,7 @@
 
 import type * as React from "react";
 import { formatDistanceToNow } from "date-fns";
-import { Check, Edit, Trash2, Calendar, Flag, ChevronDown, ChevronUp, Loader2 } from "lucide-react"; // Import Loader2
+import { Check, Edit, Trash2, Calendar, Flag, ChevronDown, ChevronUp, Loader2, Tag } from "lucide-react"; // Import Loader2 and Tag
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -64,16 +64,16 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
 
   return (
     <Card className={cn(
-        "w-full transition-opacity duration-300",
-        task.completed && "opacity-60",
-        isUpdating && "opacity-50 pointer-events-none", // Dim card during updates
+        "w-full transition-opacity duration-300 hover:shadow-md", // Added hover shadow
+        task.completed && "opacity-60 hover:opacity-80", // Adjust opacity on hover for completed
+        isUpdating && "opacity-50 pointer-events-none animate-pulse", // Dim and pulse card during updates
         viewMode === 'list' && "flex flex-col sm:flex-row",
         viewMode === 'grid' && "flex flex-col"
       )}>
        {/* Checkbox and Main Info */}
        <div className={cn(
            "flex items-start space-x-4 p-4",
-           viewMode === 'list' && "flex-shrink-0 sm:w-1/3 md:w-1/4 lg:w-1/5 border-b sm:border-b-0 sm:border-r"
+           viewMode === 'list' && "flex-shrink-0 sm:w-auto sm:max-w-[40%] md:max-w-[35%] lg:max-w-[30%] border-b sm:border-b-0 sm:border-r" // Adjusted width constraints for list view
         )}>
          <Checkbox
             id={`task-${task.id}`}
@@ -84,11 +84,11 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
             disabled={isUpdating} // Disable during update
             />
           <div className="flex-1 min-w-0">
-             <CardTitle id={`title-${task.id}`} className={cn("text-lg", task.completed && "line-through")}>
+             <CardTitle id={`title-${task.id}`} className={cn("text-lg font-semibold", task.completed && "line-through text-muted-foreground")}>
                 {task.title}
              </CardTitle>
              {task.description && viewMode === 'grid' && (
-                 <CardDescription className="mt-1 text-sm break-words whitespace-pre-wrap">
+                 <CardDescription className="mt-1 text-sm break-words whitespace-pre-wrap line-clamp-3"> {/* Added line clamp */}
                     {task.description}
                 </CardDescription>
             )}
@@ -105,16 +105,16 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
           <div className="mb-3">
             <button
               onClick={toggleDescription}
-              className="flex items-center text-xs text-muted-foreground hover:text-foreground focus:outline-none"
+              className="flex items-center text-xs text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring rounded px-1" // Added focus ring and padding
               aria-expanded={showDescription}
               aria-controls={`desc-${task.id}`}
               disabled={isUpdating}
             >
-              {showDescription ? 'Hide Description' : 'Show Description'}
+              {showDescription ? 'Hide' : 'Show'} Description
               {showDescription ? <ChevronUp className="ml-1 h-3 w-3"/> : <ChevronDown className="ml-1 h-3 w-3"/>}
             </button>
             {showDescription && (
-              <CardDescription id={`desc-${task.id}`} className="mt-1 text-sm break-words whitespace-pre-wrap">
+              <CardDescription id={`desc-${task.id}`} className="mt-1.5 text-sm break-words whitespace-pre-wrap bg-muted/50 p-2 rounded"> {/* Added background */}
                 {task.description}
               </CardDescription>
             )}
@@ -126,6 +126,12 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
              viewMode === 'list' ? "mt-auto" : "mt-4"
          )}>
              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                 {task.category && (
+                   <Badge variant="secondary" className="flex items-center gap-1 px-2 py-0.5 font-normal">
+                        <Tag className="h-3 w-3" />
+                        {task.category}
+                    </Badge>
+                 )}
                 <Badge variant="outline" className={cn("capitalize flex items-center gap-1 px-2 py-0.5", priorityColors[task.priority])}>
                     {priorityIcons[task.priority]}
                     {task.priority}
@@ -137,18 +143,18 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete, viewMode = 
                     </span>
                 </div>
              </div>
-             <div className="flex items-center space-x-1 flex-shrink-0 mt-2 sm:mt-0">
+             <div className="flex items-center space-x-1 flex-shrink-0 mt-2 sm:mt-0 self-end sm:self-center"> {/* Align actions */}
                  {task.completed && (
-                  <div className="flex items-center text-accent mr-2">
+                  <div className="flex items-center text-green-600 dark:text-green-400 mr-2"> {/* Changed color */}
                     <Check className="h-4 w-4 mr-1" />
-                    <span className="text-xs">Completed</span>
+                    <span className="text-xs font-medium">Completed</span>
                   </div>
                 )}
                 {isUpdating ? ( // Show loader on action buttons when updating
                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
                 <>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(task)} aria-label="Edit Task" disabled={isUpdating}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(task)} aria-label="Edit Task" disabled={isUpdating || task.completed}> {/* Disable edit if completed */}
                         <Edit className="h-4 w-4" />
                     </Button>
                      <AlertDialog>
