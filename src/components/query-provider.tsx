@@ -1,5 +1,5 @@
 
-"use client";
+"use client"; // Add explicitly
 
 import type * as React from 'react';
 import { useState } from 'react'; // Import useState
@@ -19,3 +19,4 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     </QueryClientProvider>
   );
 }
+
