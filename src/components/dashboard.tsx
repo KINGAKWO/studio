@@ -378,7 +378,6 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-1/2" /> : incompleteTasksCount}</div>
-             {/* Fix: Changed p to div for valid nesting with Skeleton */}
              <div className="text-xs text-muted-foreground mt-1">
                 {isLoading ? <Skeleton className="h-3 w-2/3" /> : `${completedTasks} completed`}
              </div>
@@ -401,7 +400,6 @@ export function Dashboard() {
            </CardHeader>
            <CardContent>
              <div className="text-2xl font-bold text-destructive">{isLoading ? <Skeleton className="h-8 w-1/2" /> : overdueTasksCount}</div>
-              {/* Fix: Changed p to div for valid nesting with Skeleton */}
               <div className="text-xs text-muted-foreground mt-1">
                  {isLoading ? <Skeleton className="h-3 w-3/4" /> : `Tasks past deadline`}
               </div>
@@ -509,8 +507,8 @@ export function Dashboard() {
                            <Skeleton className="h-4 w-4 rounded-sm mt-1 flex-shrink-0"/>
                            <div className="flex-1 space-y-1.5 min-w-0">
                              <Skeleton className="h-5 w-3/4" />
-                              {viewMode === 'grid' && <Skeleton className="h-3 w-full" />}
-                              {viewMode === 'grid' && <Skeleton className="h-3 w-5/6" />}
+                              {viewOption === 'grid' && <Skeleton className="h-3 w-full" />}
+                              {viewOption === 'grid' && <Skeleton className="h-3 w-5/6" />}
                            </div>
                         </CardHeader>
                         <CardContent className={cn("flex-1 flex flex-col p-4", viewOption === 'list' ? "justify-between" : "pt-0")}>
