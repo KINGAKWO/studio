@@ -5,7 +5,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster"; // Import Toaster
 import { ThemeProvider } from "@/components/theme-provider"; // Import ThemeProvider
 import { QueryProvider } from "@/components/query-provider"; // Import QueryProvider
-import { AuthProvider } from "@/components/auth-provider";
+import { AuthProvider } from "@/components/auth-provider"; // Import AuthProvider
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -28,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning> {/* suppressHydrationWarning for next-themes */}
+    <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <AuthProvider>
           <QueryProvider> {/* Wrap with QueryProvider */}
