@@ -15,8 +15,8 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Wrap children in a fragment to ensure no extra nodes */}
-      <>{children}</>
+      {/* Render children directly without extra fragment */}
+      {children}
     </QueryClientProvider>
   );
 }
